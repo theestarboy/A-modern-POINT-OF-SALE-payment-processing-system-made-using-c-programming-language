@@ -1,0 +1,362 @@
+#include <iostream>   // For input and output operations
+#include <fstream>    // For reading/writing transaction data into files
+#include <vector>     // To store multiple payment records
+#include <map>        // To summarize and track payment statistics
+#include <string>     // For string variables (names, card numbers, etc.)
+#include <ctime>      // For recording transaction time
+#include <cstdlib>    // For generating random authorization codes
+#include <iomanip>    // For controlling decimal output formatting
+using namespace std;
+
+// STRUCT: PaymentDetails
+
+struct PaymentDetails {
+    int paymentId;               // Unique ID for each transaction
+    string paymentMethod;        // Payment type: Cash, Card, or Mobile
+    double amount;               // Amount paid by the customer
+    string transactionTime;      // Date and time of transaction
+    string status;               // "Completed" or "Failed"
+    string authorizationCode;    // Unique code generated for approved payments
+};
+class PaymentProcessor {
+private:
+    static int nextPaymentId;     // Generates unique IDs for each transaction
+    PaymentDetails* currentPayment; // Pointer to store the latest payment being processed
+
+public:
+    PaymentProcessor();           // Constructor
+    ~PaymentProcessor();          // Destructor (frees memory)
+
+    // Payment processing methods
+    bool processCashPayment(double amount, double tendered);
+    bool processCardPayment(double amount, string cardNumber, string expiry, string cvv, string cardType);
+    bool processMobilePayment(double amount, string mobileProvider);
+    
+    double calculateChange(double amount, double tendered); // Calculates change for cash
+    string generateAuthorizationCode();                     // Creates random authorization codes
+    bool validateCard(string cardNumber, string expiry, string cvv); // Basic card validation
+
+    PaymentDetails* getCurrentPayment() { return currentPayment; } // Returns current transaction
+};
+
+// Initialize static variable (starting from 1001)
+int PaymentProcessor::nextPaymentId = 1001;
+
+// Constructor
+PaymentProcessor::PaymentProcessor() {
+    currentPayment = nullptr;
+}
+
+// Destructor to release dynamic memory
+PaymentProcessor::~PaymentProcessor() {
+    if (currentPayment != nullptr) {
+        delete currentPayment;
+        currentPayment = nullptr;
+    }
+}
+
+// Calculates change given by customer
+double PaymentProcessor::calculateChange(double amount, double tendered) {
+    return tendered - amount;
+}
+
+// Generates a random authorization code for successful transactions
+string PaymentProcessor::generateAuthorizationCode() {
+    const char alphanum[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    int len = 7;
+    string code = "AUTH-";
+    for (int i = 0; i < len; ++i) {
+        code += alphanum[rand() % (sizeof(alphanum) - 1)]; // Randomly choose alphanumeric chars
+    }
+    return code;
+}
+
+// Validates card details format (simple validation)
+bool PaymentProcessor::validateCard(string cardNumber, string expiry, string cvv) {
+    if (cardNumber.length() != 16) return false;              // Must have 16 digits
+    if (expiry.length() != 5 || expiry[2] != '/') return false; // Must follow MM/YY format
+    if (cvv.length() < 3 || cvv.length() > 4) return false;   // 3 or 4 digits allowed
+    return true;
+}
+
+// Processes cash payment
+bool PaymentProcessor::processCashPayment(double amount, double tendered) {
+    if (tendered < amount) { // Customer gave less money than required
+        cout << "ERROR: Insufficient cash tendered." << endl;
+        return false;
+    }
+
+    // Calculate change for customer
+    double change = calculateChange(amount, tendered);
+
+    // Delete old transaction if exists
+    if (currentPayment != nullptr) delete currentPayment;
+
+    // Create new payment record
+    currentPayment = new PaymentDetails;
+    currentPayment->paymentId = nextPaymentId++;
+    currentPayment->paymentMethod = "Cash";
+    currentPayment->amount = amount;
+
+    // Record current time
+    time_t now = time(0);
+    string t = ctime(&now);
+    t.pop_back(); // Remove newline character
+    currentPayment->transactionTime = t;
+    currentPayment->status = "Completed";
+    currentPayment->authorizationCode = "N/A"; // Cash doesn’t need authorization
+
+    // Display receipt
+    cout << fixed << setprecision(2);
+    cout << "\n=== CASH PAYMENT ===" << endl;
+    cout << "Amount Due: $" << amount << endl;
+    cout << "Cash Tendered: $" << tendered << endl;
+    cout << "Change Due: $" << change << endl;
+    cout << "Payment Status: " << currentPayment->status << endl;
+    cout << "Transaction ID: PAY-" << currentPayment->paymentId << endl;
+    cout << "Thank you for your purchase!" << endl;
+
+    return true;
+}
+
+// Processes card payment (credit or debit)
+bool PaymentProcessor::processCardPayment(double amount, string cardNumber, string expiry, string cvv, string cardType) {
+    // Validate card inputs
+    if (!validateCard(cardNumber, expiry, cvv)) {
+        cout << "ERROR: Invalid card details." << endl;
+        return false;
+    }
+
+    // Simulate random approval (90% chance of success)
+    bool authorized = (rand() % 100 < 90);
+
+    // Delete old transaction if exists
+    if (currentPayment != nullptr) delete currentPayment;
+
+    // Create new payment record
+    currentPayment = new PaymentDetails;
+    currentPayment->paymentId = nextPaymentId++;
+    currentPayment->paymentMethod = cardType;
+    currentPayment->amount = amount;
+
+    // Record transaction time
+    time_t now = time(0);
+    string t = ctime(&now);
+    t.pop_back();
+    currentPayment->transactionTime = t;
+
+    // If approved, generate code and print success receipt
+    if (authorized) {
+        currentPayment->status = "Completed";
+        currentPayment->authorizationCode = generateAuthorizationCode();
+
+        cout << fixed << setprecision(2);
+        cout << "\n=== " << cardType << " PAYMENT ===" << endl;
+        cout << "Amount: $" << amount << endl;
+        cout << "Card Number: **** **** **** " << cardNumber.substr(12) << endl; // Masked
+        cout << "Expiry: " << expiry << endl;
+        cout << "Authorization Code: " << currentPayment->authorizationCode << endl;
+        cout << "Transaction ID: PAY-" << currentPayment->paymentId << endl;
+        cout << "Status: " << currentPayment->status << endl;
+    } else {
+        // Payment failed
+        currentPayment->status = "Failed";
+        currentPayment->authorizationCode = "N/A";
+        cout << "\nERROR: Payment Declined (Insufficient Funds)" << endl;
+        return false;
+    }
+    return true;
+}
+
+// Processes mobile payment (like PayPal, Google Pay, etc.)
+bool PaymentProcessor::processMobilePayment(double amount, string mobileProvider) {
+    // Simulate network success (95% chance)
+    bool success = (rand() % 100 < 95);
+
+    if (currentPayment != nullptr) delete currentPayment;
+
+    currentPayment = new PaymentDetails;
+    currentPayment->paymentId = nextPaymentId++;
+    currentPayment->paymentMethod = mobileProvider;
+    currentPayment->amount = amount;
+
+    // Record transaction time
+    time_t now = time(0);
+    string t = ctime(&now);
+    t.pop_back();
+    currentPayment->transactionTime = t;
+
+    if (success) {
+        currentPayment->status = "Completed";
+        currentPayment->authorizationCode = generateAuthorizationCode();
+
+        cout << fixed << setprecision(2);
+        cout << "\n=== MOBILE PAYMENT ===" << endl;
+        cout << "Amount: $" << amount << endl;
+        cout << "Provider: " << mobileProvider << endl;
+        cout << "Authorization Code: " << currentPayment->authorizationCode << endl;
+        cout << "Transaction ID: PAY-" << currentPayment->paymentId << endl;
+        cout << "Status: " << currentPayment->status << endl;
+    } else {
+        // Failed due to timeout or network problem
+        currentPayment->status = "Failed";
+        currentPayment->authorizationCode = "N/A";
+        cout << "\nERROR: Mobile Payment Failed due to network issues." << endl;
+        return false;
+    }
+    return true;
+}
+
+// CLASS: TransactionManager
+class TransactionManager {
+private:
+    vector<PaymentDetails*> transactionHistory;  // Stores all transactions
+    map<string, double> paymentStats;            // Tracks total per payment method
+
+public:
+    ~TransactionManager() {
+        // Free all dynamically allocated transactions
+        for (auto ptr : transactionHistory) delete ptr;
+        transactionHistory.clear();
+    }
+
+    // Adds a transaction to the history list
+    void addTransaction(PaymentDetails* transaction) {
+        PaymentDetails* copy = new PaymentDetails(*transaction); // Deep copy
+        transactionHistory.push_back(copy);
+
+        // Save to file depending on status
+        if (copy->status == "Completed") {
+            paymentStats[copy->paymentMethod] += copy->amount;
+            saveTransactionToFile(copy);
+        } else {
+            logFailedTransaction(copy);
+        }
+    }
+
+    // Saves successful transactions to file
+    void saveTransactionToFile(PaymentDetails* transaction) {
+        ofstream outfile("transactions.txt", ios::app);
+        if (!outfile) {
+            cerr << "Error: cannot open transactions.txt\n";
+            return;
+        }
+        outfile << "Transaction ID: PAY-" << transaction->paymentId << "\n";
+        outfile << "Method: " << transaction->paymentMethod << "\n";
+        outfile << "Amount: $" << fixed << setprecision(2) << transaction->amount << "\n";
+        outfile << "Time: " << transaction->transactionTime << "\n";
+        outfile << "Status: " << transaction->status << "\n";
+        outfile << "Authorization Code: " << transaction->authorizationCode << "\n";
+        outfile << "--------------------------\n";
+    }
+
+    // Logs failed transactions separately
+    void logFailedTransaction(PaymentDetails* transaction) {
+        ofstream logfile("payment_errors.log", ios::app);
+        if (!logfile) {
+            cerr << "Error: cannot open payment_errors.log\n";
+            return;
+        }
+        logfile << "Transaction ID: PAY-" << transaction->paymentId << "\n";
+        logfile << "Method: " << transaction->paymentMethod << "\n";
+        logfile << "Amount: $" << fixed << setprecision(2) << transaction->amount << "\n";
+        logfile << "Time: " << transaction->transactionTime << "\n";
+        logfile << "Status: " << transaction->status << "\n";
+        logfile << "Authorization Code: " << transaction->authorizationCode << "\n";
+        logfile << "--------------------------\n";
+    }
+
+    // Prints summary of all transactions
+    void showTransactions() {
+    ifstream infile("transactions.txt");
+    if (!infile) {
+        cerr << "Error: cannot open transactions.txt\n";
+        return;
+    }
+
+    string line;
+    cout << "\n=== Transactions Log ===\n";
+    while (getline(infile, line)) {
+        cout << line << endl;
+    }
+    infile.close();
+    cout << "========================\n";
+}
+};
+
+// Allows user to choose between Cash, Card or Mobile payment
+void runPOSSystem() {
+    PaymentProcessor processor;
+    TransactionManager manager;
+    srand(time(0)); // Seed random number generator for authorization simulation
+
+    int choice;
+    do {
+        cout << "\n=== PAYMENT PROCESSING SYSTEM ===" << endl;
+        cout << "1. Cash Payment" << endl;
+        cout << "2. Credit Card Payment" << endl;
+        cout << "3. Debit Card Payment" << endl;
+        cout << "4. Mobile Payment" << endl;
+        cout << "5. View Transaction History" << endl;
+        cout << "6. Exit" << endl;
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        double amount;
+        switch (choice) {
+        case 1: {
+            // CASH PAYMENT
+            cout << "Enter amount: $";
+            cin >> amount;
+            double tendered;
+            cout << "Enter cash tendered: $";
+            cin >> tendered;
+            if (processor.processCashPayment(amount, tendered))
+                manager.addTransaction(processor.getCurrentPayment());
+            break;
+        }
+        case 2:
+        case 3: {
+            // CARD PAYMENT (CREDIT/DEBIT)
+            string cardNumber, expiry, cvv, cardType;
+            cardType = (choice == 2) ? "Credit Card" : "Debit Card";
+            cout << "Enter amount: $";
+            cin >> amount;
+            cout << "Enter card number (16 digits): ";
+            cin >> cardNumber;
+            cout << "Enter expiry (MM/YY): ";
+            cin >> expiry;
+            cout << "Enter CVV: ";
+            cin >> cvv;
+            if (processor.processCardPayment(amount, cardNumber, expiry, cvv, cardType))
+                manager.addTransaction(processor.getCurrentPayment());
+            break;
+        }
+        case 4: {
+            // MOBILE PAYMENT
+            string provider;
+            cout << "Enter amount: $";
+            cin >> amount;
+            cout << "Enter mobile payment provider (PayPal, ApplePay, GooglePay): ";
+            cin >> provider;
+            if (processor.processMobilePayment(amount, provider))
+                manager.addTransaction(processor.getCurrentPayment());
+            break;
+        }
+        case 5:
+            // DISPLAY HISTORY
+            manager.showTransactions();
+            break;
+        case 6:
+            cout << "Exiting system. Goodbye!" << endl;
+            break;
+        default:
+            cout << "Invalid choice. Try again." << endl;
+        }
+    } while (choice != 6);
+}
+
+int main() {
+    runPOSSystem(); // Run the main menu
+    return 0;
+}
